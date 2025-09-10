@@ -18,6 +18,11 @@ from ..utils import (
 )
 
 MSO_INFO = {
+        'Dish': {
+        'name': 'Dish',
+        'username_field': 'username',
+        'password_field': 'password',
+    },
     'DTV': {
         'name': 'DIRECTV',
         'username_field': 'username',
@@ -1795,6 +1800,46 @@ class AdobePassIE(InfoExtractor):  # XXX: Conventionally, base classes should en
                             'code': fubo_response['code'],
                             'state': fubo_response['state'],
                         })
+                elif mso_id == 'Dish':
+                    authstate_page_res = post_form(
+                        provider_redirect_page_res, 'Downloading AuthState Page')
+                    authstate_page, urlh = authstate_page_res
+                    form_data = self._hidden_inputs(authstate_page)
+                    provider_login_page_res = self._download_webpage_handle(
+                        urlh.geturl(), video_id, 'Downloading Provider Login Page', query=form_data)
+                    provider_login_page, urlh = provider_login_page_res
+                    post_url = self._html_search_regex( r'<form[^>]*id=[\'"]main-form[\'"][^>]*action=["\'](?P<url>.+?)["\']', provider_login_page, 'post url', group='url')
+                    # post_url = self._html_search_regex(r'<form id="main-form"[^>]+action=(["\'])(?P<url>.+?)\1', provider_login_page, 'post url', group='url')
+                    print(post_url)
+                    mvpd_confirm_page_res = self._download_webpage_handle(
+                        post_url, video_id, 'Logging in', data=urlencode_postdata({
+                            mso_info.get('username_field', 'username'): username,
+                            mso_info.get('password_field', 'password'): password,
+                            'login_type': 'username&password',
+                            'source': 'authsynacor_identity1.dishnetwork.com',
+                            'source_button': 'authsynacor_identity1.dishnetwork.com',
+                            'remember_me': 'no',
+                        }), headers={
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                    })
+                    mvpd_confirm_page, urlh = mvpd_confirm_page_res
+                    redirect_url = self._html_search_regex(
+                        r'content="0;\s*url=([^\'"]+)',
+                        mvpd_confirm_page, 'meta refresh redirect')
+                    confirm_page_res = self._download_webpage_handle(
+                        redirect_url,
+                        video_id, 'Redirecting')
+                    authstate_page, urlh = authstate_page_res
+                    form_data = self._hidden_inputs(authstate_page)
+                    redirect_page_res = self._download_webpage_handle(
+                        urlh.geturl(), video_id, 'Reloading AuthState Page', query=form_data)
+                    redirect_page, urlh = redirect_page_res
+                    confirm_url = urlh.geturl()
+                    confirm_url = confirm_url.replace('firstbookend', 'lastbookend')
+                    confirm_page_res = self._download_webpage_handle(
+                        confirm_url,
+                        video_id, 'Finishing Login')
+                    post_form(confirm_page_res, 'Confirming Login')
                 else:
                     # Some providers (e.g. DIRECTV NOW) have another meta refresh
                     # based redirect that should be followed.
